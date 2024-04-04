@@ -12,17 +12,14 @@ conn = mysql.connector.connect(
 # Create cursor
 cursor = conn.cursor()
 
-# Create cursor
-cursor = conn.cursor()
-
 # Drop the existing database if it exists
-cursor.execute("DROP DATABASE IF EXISTS avocado")
+# cursor.execute("DROP DATABASE IF EXISTS avocado")
 
 # Recreate the database
-cursor.execute("CREATE DATABASE avocado")
+# cursor.execute("CREATE DATABASE avocado")
 
 # Use the database
-cursor.execute("USE avocado")
+# cursor.execute("USE avocado")
 
 # Create database
 cursor.execute("CREATE DATABASE IF NOT EXISTS avocado")
@@ -190,13 +187,6 @@ CREATE TABLE IF NOT EXISTS Sales (
 # Execute the query to create Sales (fact) table
 cursor.execute(create_sales_table_query)
 
-# View the fact table
-cursor.execute("SELECT * FROM Sales")
-sales_records = cursor.fetchall()
-print("\nSales Table:")
-for record in sales_records:
-    print(record)
-
 # Function to retrieve dimension IDs
 def get_dimension_id(table_name, column_name, value):
     query = f"SELECT {column_name}_id FROM {table_name} WHERE {column_name} = %s"
@@ -246,6 +236,309 @@ with open('stagged_data.csv', 'r') as file:
 # sales_records = cursor.fetchall()
 # print("\nSales Table:")
 # for record in sales_records:
+#     print(record)
+
+
+# Roll down query: Drill down from year level to quarter level
+roll_down_query = """
+SELECT
+    YEAR(d.date) AS Year,
+    QUARTER(d.date) AS Quarter,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Date d ON s.date_id = d.date_id
+GROUP BY
+    YEAR(d.date), QUARTER(d.date);
+"""
+
+# Execute the roll down query
+cursor.execute(roll_down_query)
+roll_down_results = cursor.fetchall()
+# for row in roll_down_results:
+#     print(row)
+
+# Drill up query: Roll up from quarter level to year level
+drill_up_query = """
+SELECT
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Date d ON s.date_id = d.date_id
+GROUP BY
+    YEAR(d.date);
+"""
+
+# Execute the drill up query
+cursor.execute(drill_up_query)
+drill_up_results = cursor.fetchall()
+# for row in drill_up_results:
+#     print(row)
+
+# Dice Query 1: Create a sub-cube for the year 2017 and New York City
+dice_query_1 = """
+SELECT
+    city.city_name AS City,
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    City city ON s.city_id = city.city_id
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) = 2017
+    AND city.city_name = 'New York'
+GROUP BY
+    city.city_name, YEAR(d.date);
+"""
+
+# Execute the dice query 1
+cursor.execute(dice_query_1)
+dice_results_1 = cursor.fetchall()
+# for row in dice_results_1:
+#     print(row)
+
+# Dice Query 2: Create a sub-cube for the month of January and Los Angeles
+dice_query_2 = """
+SELECT
+    city.city_name AS City,
+    MONTH(d.date) AS Month,
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    City city ON s.city_id = city.city_id
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    MONTH(d.date) = 1
+    AND city.city_name = 'Los Angeles'
+GROUP BY
+    city.city_name, MONTH(d.date), YEAR(d.date);
+"""
+
+# Execute the dice query 2
+cursor.execute(dice_query_2)
+dice_results_2 = cursor.fetchall()
+# for row in dice_results_2:
+#     print(row)
+
+# d. Combining OLAP operations
+
+# Query 1: OLAP operation combining slice and roll up - Analyzing total sales volume per quarter for the year 2018
+# Slicing the data by year and rolling up to quarter level
+quarterly_sales_query = """
+SELECT
+    YEAR(d.date) AS Year,
+    QUARTER(d.date) AS Quarter,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) = 2018
+GROUP BY
+    YEAR(d.date), QUARTER(d.date);
+"""
+
+# Execute the query
+cursor.execute(quarterly_sales_query)
+quarterly_sales_records = cursor.fetchall()
+# for record in quarterly_sales_records:
+#     print(record)
+
+# Query 2: OLAP operation combining slice and drill down - Analyzing total sales volume per city for the year 2018
+# Slicing the data by year and drilling down to city level
+city_sales_query = """
+SELECT
+    city.city_name AS City,
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Date d ON s.date_id = d.date_id
+JOIN
+    City city ON s.city_id = city.city_id
+WHERE
+    YEAR(d.date) = 2018
+GROUP BY
+    city.city_name, YEAR(d.date);
+"""
+
+# Execute the query
+cursor.execute(city_sales_query)
+city_sales_records = cursor.fetchall()
+# for record in city_sales_records:
+#     print(record)
+
+# Query 3: OLAP operation combining slice and dice - Analyzing total sales volume for a specific city in a particular month
+# Slicing the data by year and drilling down to month level, then dicing for a specific city
+specific_city_sales_query = """
+SELECT
+    city.city_name AS City,
+    MONTH(d.date) AS Month,
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    City city ON s.city_id = city.city_id
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) = 2018
+    AND city.city_name = 'Chicago'  -- Specific city
+GROUP BY
+    city.city_name, MONTH(d.date), YEAR(d.date);
+"""
+
+# Execute the query
+cursor.execute(specific_city_sales_query)
+specific_city_sales_records = cursor.fetchall()
+# for record in specific_city_sales_records:
+#     print(record)
+
+# Query 4: OLAP operation combining slice and drill up - Analyzing total sales volume per year
+# Slicing the data by year
+yearly_sales_query = """
+SELECT
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) >= 2016 AND YEAR(d.date) <= 2018
+GROUP BY
+    YEAR(d.date);
+"""
+
+# Execute the query
+cursor.execute(yearly_sales_query)
+yearly_sales_records = cursor.fetchall()
+# for record in yearly_sales_records:
+#     print(record)
+
+
+
+# Iceberg query to retrieve the total volume of sales for each region in the year 2016, 
+# providing a sliced view of the data focused specifically on that year
+slice_query = """
+SELECT
+    r.region AS Region,
+    YEAR(d.date) AS Year,
+    SUM(s.total_volume) AS TotalVolume
+FROM
+    Sales s
+JOIN
+    Region r ON s.region_id = r.region_id
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) = 2016
+GROUP BY
+    r.region, YEAR(d.date);
+"""
+
+# Execute the slice query
+cursor.execute(slice_query)
+olap_results = cursor.fetchall()
+# for row in olap_results:
+#     print(row)
+
+# Iceberg query to determine the top 10 regions with the highest volume for the year 2017
+top_regions_query = """
+SELECT
+    r.region,
+    SUM(s.total_volume) AS total_volume
+FROM
+    Sales s
+JOIN
+    Region r ON s.region_id = r.region_id
+JOIN
+    Date d ON s.date_id = d.date_id
+WHERE
+    YEAR(d.date) = 2017
+GROUP BY
+    r.region
+ORDER BY
+    total_volume DESC
+LIMIT 10;
+"""
+
+# Execute the query to get the top 10 regions with the highest volume for 2017
+cursor.execute(top_regions_query)
+top_regions_records = cursor.fetchall()
+# print("\nTop 10 Regions with Highest Volume in 2017:")
+# for record in top_regions_records:
+#     print(record)
+
+
+# Window query to calculate the total volume of sales for each region over time
+windowing_query = """
+SELECT
+    r.region,
+    d.date,
+    SUM(s.total_volume) OVER(PARTITION BY r.region ORDER BY d.date) AS cumulative_volume
+FROM
+    Sales s
+JOIN
+    Region r ON s.region_id = r.region_id
+JOIN
+    Date d ON s.date_id = d.date_id
+ORDER BY
+    r.region, d.date;
+"""
+
+# Execute the windowing query 
+cursor.execute(windowing_query)
+windowing_records = cursor.fetchall()
+# print("\nWindowing Query Results:")
+# for record in windowing_records:
+#     print(record)
+
+
+# Query using the WINDOW clause to compare the average price in each region in 2017 to that of the previous and next years
+window_query = """
+WITH AvgPriceComparison AS (
+    SELECT
+        r.region AS Region,
+        YEAR(d.date) AS Year,
+        AVG(s.average_price) AS AvgPrice,
+        LAG(AVG(s.average_price)) OVER wnd AS AvgPricePrevYear,
+        LEAD(AVG(s.average_price)) OVER wnd AS AvgPriceNextYear
+    FROM
+        Sales s
+    JOIN
+        Region r ON s.region_id = r.region_id
+    JOIN
+        Date d ON s.date_id = d.date_id
+    WHERE
+        YEAR(d.date) BETWEEN 2016 AND 2018
+    GROUP BY
+        r.region, YEAR(d.date)
+    WINDOW
+        wnd AS (PARTITION BY r.region ORDER BY YEAR(d.date))
+)
+SELECT *
+FROM AvgPriceComparison
+WHERE Year = 2017;
+"""
+
+# Execute the query with the Window clause
+cursor.execute(window_query)
+window_records = cursor.fetchall()
+# print("\nWindow Query Results:")
+# for record in window_records:
 #     print(record)
 
 # Commit changes and close connection
